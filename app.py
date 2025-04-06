@@ -8,18 +8,32 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import random
 from rapidfuzz import process, fuzz
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
+from flask_cors import CORS
+import mysql.connector
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
-# Load the dataset
-ds = pd.read_csv("movies.csv")
+# Database connection
+def get_db_connection():
+    return mysql.connector.connect(
+        host="localhost",
+        user="your username",
+        password="your password",
+        database="your database name"
+    )
+
+# Load the dataset from the database
+conn = get_db_connection()
+ds = pd.read_sql("SELECT * FROM movies", conn)
+conn.close()
 
 # Fill the missing values with empty string
 ds.fillna("", inplace=True)
 
 # Combine relevant features into a single string
-ds["combined_features"] = ds["Genre"] + " " + ds["Director"] + " " + ds["Actors"] + " " + ds["Overview"]
+ds["combined_features"] = ds["genre"] + " " + ds["director"] + " " + ds["actors"] + " " + ds["overview"]
 
 # Convert the text to a matrix of TF-IDF features
 vectorizer = TfidfVectorizer(stop_words="english")
@@ -33,7 +47,7 @@ def get_recommendations(movie_title, cosine_sim=cosine_sim, ds=ds):
     movie_title = movie_title.lower()  # Convert to lowercase for case-insensitive matching
 
     # Convert all dataset titles to lowercase and find matching index
-    ds["lower_title"] = ds["Title"].str.lower()
+    ds["lower_title"] = ds["title"].str.lower()
     
     # Use RapidFuzz to find the best match
     best_match, score, _ = process.extractOne(movie_title, 
@@ -46,7 +60,7 @@ def get_recommendations(movie_title, cosine_sim=cosine_sim, ds=ds):
     
     # Get the index of the movie that matches the title
     matched_idx = ds[ds["lower_title"] == best_match].index[0]
-    matched_title = ds.iloc[matched_idx]["Title"]
+    matched_title = ds.iloc[matched_idx]["title"]
     print(f"Best match found: {matched_title} with score {score}")
     idx = matched_idx
 
@@ -57,7 +71,7 @@ def get_recommendations(movie_title, cosine_sim=cosine_sim, ds=ds):
     sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
     
     # Get the scores of the 10 most similar movies
-    top_movies = [ds.iloc[i[0]]["Title"] for i in sim_scores[0:10]]
+    top_movies = [ds.iloc[i[0]]["title"] for i in sim_scores[0:10]]
 
     return {"message": f"Best match found: {matched_title}", "recommendations": top_movies}
 
@@ -66,15 +80,15 @@ def get_reco_on_pref(fav_genres, fav_actors, fav_directors, ds=ds):
     
     # Filter by genres
     if fav_genres:
-        filtered_movies = filtered_movies[filtered_movies["Genre"].str.contains('|'.join(fav_genres), case=False, na=False)]
+        filtered_movies = filtered_movies[filtered_movies["genre"].str.contains('|'.join(fav_genres), case=False, na=False)]
 
     # Filter by actors
     if fav_actors:
-        filtered_movies = filtered_movies[filtered_movies["Actors"].str.contains('|'.join(fav_actors), case=False, na=False)]
+        filtered_movies = filtered_movies[filtered_movies["actors"].str.contains('|'.join(fav_actors), case=False, na=False)]
 
     # Filter by directors
     if fav_directors:
-        filtered_movies = filtered_movies[filtered_movies["Director"].str.contains('|'.join(fav_directors), case=False, na=False)]
+        filtered_movies = filtered_movies[filtered_movies["director"].str.contains('|'.join(fav_directors), case=False, na=False)]
 
     # If no movies match, return a random movie
     if filtered_movies.empty:
@@ -82,20 +96,25 @@ def get_reco_on_pref(fav_genres, fav_actors, fav_directors, ds=ds):
     
     # Handle the case where the filtered movies are less than 5
     if len(filtered_movies) < 5:
-        return {"message": "Movies based on your preferences", "recommendations": filtered_movies.sample()["Title"].tolist()}
+        return {"message": "Movies based on your preferences", "recommendations": filtered_movies.sample()["title"].tolist()}
     
-    return {"message": "Movies based on your preferences", "recommendations": filtered_movies.sample(5)["Title"].tolist()}
+    return {"message": "Movies based on your preferences", "recommendations": filtered_movies.sample(5)["title"].tolist()}
 
 def search_movies_by(category, keyword, ds=ds):
-    if category not in ["Genre", "Actors", "Director"]:
+    if category not in ["genre", "actors", "director"]:
         return {"message": "Invalid category. Choose 'Genre', 'Actors', or 'Director'.", "results": []}
     
-    results = ds[ds[category].str.contains(keyword, case=False, na=False)]["Title"].tolist()
+    results = ds[ds[category].str.contains(keyword, case=False, na=False)]["title"].tolist()
     results = random.sample(results, len(results))
 
     if results:
         return {"message": f"Movies found for {category} - {keyword}", "recommendations":results[:10]}
     return {"message": "No movies found.", "results": []}
+
+# Route to the home page
+@app.route("/")
+def home():
+    return render_template("index.html")
 
 # Route to get movie recommendations based on title
 @app.route("/recommend", methods=["GET"])
