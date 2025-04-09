@@ -19,9 +19,9 @@ CORS(app)  # Enable CORS for all routes
 def get_db_connection():
     return mysql.connector.connect(
         host="localhost",
-        user="your username",
-        password="your password",
-        database="your database name"
+        user="root",
+        password="Jojol2014",
+        database="movie_reco"
     )
 
 # Load the dataset from the database
