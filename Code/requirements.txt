@@ -1,6 +1,0 @@
-Flask==3.1.0
-pandas==2.2.3
-scikit-learn==1.6.1
-rapidfuzz==3.12.2
-requests==2.32.3
-numpy==2.0.0
